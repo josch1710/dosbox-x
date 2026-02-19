@@ -908,14 +908,34 @@ void UpdateWindowDimensions(void)
         if (SDL_GetWindowWMInfo(sdl.window, &wmi)) {
             hwnd = wmi.info.os2.hwnd;
             if (hwnd != 0) {
-                WinQueryWindowRect(hwnd, &rect);
+//                WinQueryWindowRect(hwnd, &rect);
+                // Map the coordinates to desktop windows
+                WinMapWindowPoints(hwnd, HWND_DESKTOP, (PPOINTL)&rect, 1);
                 UpdateWindowDimensions(rect.xRight - rect.xLeft, rect.yTop - rect.yBottom);
+                screen_size_info.screen_position_pixels.x = rect.xLeft;
+                screen_size_info.screen_position_pixels.y = rect.yBottom;
 
                 // Get the screen size via the desktop window.
                 WinQueryWindowRect(HWND_DESKTOP, &rect);
                 // We just set DPI to 96dpi.
                 screen_size_info.screen_dpi.width = 96.0;
                 screen_size_info.screen_dpi.height = 96.0;
+                // Query DPI
+                HPS hps = WinGetScreenPS(HWND_DESKTOP);
+                if (hps != NULLHANDLE) {
+                    HDC hdc = GpiQueryDevice(hps);
+                    if (hdc != NULLHANDLE && hdc != HDC_ERROR) {
+                        LONG lWidth, lHeight;
+                        DevQueryCaps(hdc, CAPS_HORIZONTAL_RESOLUTION, 1L, &lWidth);
+                        DevQueryCaps(hdc, CAPS_VERTICAL_RESOLUTION, 1L, &lHeight);
+                        // The resolution is pixels per meter, so calculate DPI.
+                        screen_size_info.screen_dpi.width = lWidth * 0.0254;
+                        screen_size_info.screen_dpi.height = lHeight * 0.0254;
+                    }
+                    WinReleasePS(hps);
+                }
+
+
 
                 // DPI calculation pulled from sdlmain_linux.cpp and rearranged to calculate mm dimensions
                 screen_size_info.screen_dimensions_pixels.width = rect.xRight - rect.xLeft;
