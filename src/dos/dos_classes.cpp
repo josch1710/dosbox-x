@@ -168,6 +168,10 @@ void DOS_InfoBlock::SetLocation(uint16_t segment) {
 	real_writew(tbl2_seg,0x04,DOS_FILES-5);
 }
 
+uint16_t DOS_InfoBlock::GetFirstMCB(void) {
+	return (uint16_t)sGet(sDIB,firstMCB);
+}
+
 void DOS_InfoBlock::SetFirstMCB(uint16_t _firstmcb) {
 	sSave(sDIB,firstMCB,_firstmcb); //c2woody
 }
@@ -225,6 +229,9 @@ uint32_t DOS_InfoBlock::GetDeviceChain(void) {
 	return sGet(sDIB,nulNextDriver);
 }
 
+uint32_t DOS_InfoBlock::GetStartOfDeviceChain(void) {
+	return RealMake(seg,offsetof(sDIB,nulNextDriver));
+}
 
 /* program Segment prefix */
 
@@ -361,20 +368,20 @@ void DOS_PSP::CopyFileTable(DOS_PSP* srcpsp,bool createchildpsp) {
 }
 
 void DOS_PSP::CloseFile(const char *name) {
+	// FIXME: This code assumes dos.psp() == this PSP segment
 	for (uint16_t i=0;i<sGet(sPSP,max_files);i++) {
-        uint32_t handle = RealHandle(i);
-        if (handle<DOS_FILES && Files[handle] && !strcmp(Files[handle]->name, name)) {
-            if (Files[handle]->IsOpen()) Files[handle]->open = false;
-            Files[handle] = NULL;
-            return;
-        }
+		uint32_t handle = RealHandle(i);
+		if (handle<DOS_FILES && Files[handle] && !strcmp(Files[handle]->name, name)) {
+			DOS_CloseFile(i);
+			return;
+		}
 	}
 }
 
 void DOS_PSP::CloseFiles(void) {
-	for (uint16_t i=0;i<sGet(sPSP,max_files);i++) {
+	// FIXME: This code assumes dos.psp() == this PSP segment
+	for (uint16_t i=0;i<sGet(sPSP,max_files);i++)
 		DOS_CloseFile(i);
-	}
 }
 
 void DOS_PSP::SaveVectors(void) {

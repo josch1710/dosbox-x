@@ -1,5 +1,5 @@
 dnl Init.
-AC_INIT(dosbox-x,2026.01.02,[https://github.com/joncampbell123/dosbox-x/issues],[],[https://dosbox-x.com])
+AC_INIT(dosbox-x,2026.06.02,[https://github.com/joncampbell123/dosbox-x/issues],[],[https://dosbox-x.com])
 COPYRIGHT_YEAR=`echo $PACKAGE_VERSION | cut -c1-4`
 AC_SUBST([COPYRIGHT_YEAR])
 AC_PREREQ(2.60)
@@ -143,6 +143,18 @@ COMMIT_HASH=`git rev-parse --short=7 HEAD 2>/dev/null || echo "unknown"`
 AC_SUBST([COMMIT_HASH])
 AC_MSG_RESULT([$COMMIT_HASH])
 
+GITBRANCH="${GITHUB_REF_NAME:-`git rev-parse --abbrev-ref HEAD 2>/dev/null`}"
+OSFREE=0
+AH_TEMPLATE(C_OSFREE,[Define to 1 to make an OSFREE version])
+
+# automated builds on GitHub are failing to detect main-osfree branch for osfree?
+# try looking at vs/config_package.h
+if test "x$GITBRANCH" = "xmain-osfree"; then
+    AC_DEFINE([C_OSFREE],[1],[Make an OSFREE build])
+elif grep -q "#define OSFREE" vs/config_package.h 2>/dev/null; then
+    AC_DEFINE([C_OSFREE],[1],[Make an OSFREE build])
+fi
+
 dnl Setup for automake
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_CONFIG_HEADER(config.h)
@@ -205,51 +217,24 @@ AC_CHECK_HEADERS([sys/socket.h  netinet/in.h pwd.h], [], [],
 #endif
 ])
 
-dnl C++11 is deprecated in this codebase.
-dnl C++14 is recommended at this time, will eventually become mandatory.
+dnl C++14 is required.
 
-dnl AC_CHECK_CXXFLAGS will prepend gnu++11 to CXXFLAGS if supported, for us.
+dnl AC_CHECK_CXXFLAGS will prepend gnu++14 to CXXFLAGS if supported, for us.
 OLDCFLAGS="$CFLAGS"
 OLDCPPFLAGS="$CPPFLAGS"
 OLDCXXFLAGS="$CXXFLAGS"
 
 AC_MSG_CHECKING([checking for C++14 support])
-AC_CHECK_CXXFLAGS([ -std=gnu++14 ], [  ], [
-    warn_cpp11=1
-])
+AC_CHECK_CXXFLAGS([ -std=gnu++14 ], [  ], 
+    AC_MSG_ERROR([ Your compiler must support C++14 or better ])
+)
 
 CXXFLAGS="$OLDCXXFLAGS"
 CPPFLAGS="$OLDCPPFLAGS"
 CFLAGS="$OLDCFLAGS"
 
-AC_MSG_CHECKING([checking for C++11 support])
-AC_CHECK_CXXFLAGS([ -std=gnu++11 ], [  ], [
-    warn_cpp0x=1
-])
-
-CXXFLAGS="$OLDCXXFLAGS"
-CPPFLAGS="$OLDCPPFLAGS"
-CFLAGS="$OLDCFLAGS"
-
-if test x$warn_cpp0x = x1; then
-    AC_MSG_ERROR([ Your compiler must support C++11 or better ])
-fi
-
-dnl Allow devs to force compile as C++11 as long as this code supports C++11 as a baseline
-AC_ARG_ENABLE(force-cxx11,AC_HELP_STRING([--enable-force-cxx11],[Force compile as C++11]),force_cxx11=yes)
-
-if test x$warn_cpp11 = x1; then
-    AC_MSG_WARN([ Your compiler does not support C++14. Currently it is recommended. At some point in the future, it will be required ])
-    CFLAGS="$CFLAGS -std=gnu11";
-    CXXFLAGS="$CXXFLAGS -std=gnu++11";
-elif test x$force_cxx11 = xyes; then
-    CFLAGS="$CFLAGS -std=gnu11";
-    CXXFLAGS="$CXXFLAGS -std=gnu++11";
-else
-    AC_MSG_WARN([ DOSBox-X is still intended to support compilation as C++11. If you add new code please make sure it works as C++11 by running ./configure with --enable-force-cxx11 ])
-    CFLAGS="$CFLAGS -std=gnu11"; # no such "gnu14"
-    CXXFLAGS="$CXXFLAGS -std=gnu++14";
-fi
+CFLAGS="$CFLAGS -std=gnu11"; # no such "gnu14"
+CXXFLAGS="$CXXFLAGS -std=gnu++14";
 
 dnl Allow the SDL drawn menu to be enabled on Windows or macOS instead of their native menu system.
 AH_TEMPLATE(C_FORCE_MENU_SDLDRAW,[Define to 1 to force SDL-drawn menus])
@@ -533,6 +518,16 @@ AC_ARG_ENABLE([sdl2],
   [enable_sdl2=no]
 )
 
+AC_ARG_ENABLE([sdl3],
+  [AS_HELP_STRING([--enable-sdl3],[Build DOSBox-X using SDL3])],
+  [enable_sdl3=yes],
+  [enable_sdl3=no]
+)
+
+dnl LIBRARY TEST: SDL 3.x
+SDL3_VERSION=3.5.0
+AM_PATH_SDL3($SDL3_VERSION)
+
 dnl LIBRARY TEST: SDL 2.x
 SDL2_VERSION=2.0.5
 AM_PATH_SDL2($SDL2_VERSION)
@@ -543,7 +538,17 @@ AM_PATH_SDL($SDL_VERSION)
 
 dnl LIBRARY USE: SDL selection
 
-if test x"$enable_sdl2" = xyes; then
+if test x"$enable_sdl3" = xyes; then
+    AC_MSG_NOTICE([--enable-sdl3 specified, trying SDL3])
+    if test -n "$SDL3_LIBS"; then
+        SDL_STRING="SDL3"
+        LIBS="$LIBS $SDL3_LIBS"
+        CPPFLAGS="$CPPFLAGS $SDL3_CFLAGS"
+        AC_MSG_NOTICE([Building with SDL3])
+    else
+        AC_MSG_ERROR([--enable-sdl3 was specified, but SDL3 was not found])
+    fi
+elif test x"$enable_sdl2" = xyes; then
     AC_MSG_NOTICE([--enable-sdl2 specified, trying SDL2])
     if test -n "$SDL2_LIBS"; then
         SDL_STRING="SDL2"
@@ -636,6 +641,46 @@ case "$host" in
 esac
 fi
 
+dnl ==========================================
+dnl Check for Metal support (macOS only)
+dnl ==========================================
+
+AC_MSG_CHECKING([for Metal support])
+
+have_metal=no
+
+case "$host_os" in
+  darwin*)
+    AC_LANG_PUSH([Objective C++])
+    save_LIBS="$LIBS"
+    LIBS="$LIBS -framework Metal -framework QuartzCore"
+
+    AC_LINK_IFELSE(
+      [AC_LANG_PROGRAM([[
+        #import <Metal/Metal.h>
+      ]], [[
+        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+        return (device == nil);
+      ]])],
+      [have_metal=yes],
+      [have_metal=no]
+    )
+
+    LIBS="$save_LIBS"
+    AC_LANG_POP
+    ;;
+esac
+
+if test "x$have_metal" = "xyes"; then
+  AC_DEFINE([C_METAL], [1], [Define if Metal is available])
+  METAL_LIBS="-framework Metal -framework QuartzCore"
+  AC_SUBST(METAL_LIBS)
+  AC_MSG_RESULT([yes])
+else
+  AC_MSG_RESULT([no])
+fi
+AM_CONDITIONAL([C_METAL], [test "x$have_metal" = "xyes"])
+
 # FIXME: Arrggh we need the WHOLE PATH
 pwd=`realpath $srcdir`
 if [[ -z "$pwd" ]]; then pwd=`pwd`; fi
@@ -662,13 +707,9 @@ case "$host" in
        dnl to do more to distinguish them.
        dnl For now I am lazy and do not add proper detection code.
        macosx=1
-       if test x$warn_cpp11 = x1; then
-           OBJCXXFLAGS="$OBJCXXFLAGS -std=gnu++14";
-       else
-           OBJCXXFLAGS="$OBJCXXFLAGS -std=gnu++11";
-       fi
+       OBJCXXFLAGS="$OBJCXXFLAGS -std=gnu++14";
        AC_DEFINE(MACOSX, 1, [Compiling on Mac OS X])
-       LIBS="$LIBS -framework Carbon -framework CoreFoundation -framework CoreMIDI -framework AudioUnit -framework AudioToolbox -framework ApplicationServices -framework AppKit -framework IOKit"
+       LIBS="$LIBS -framework Carbon -framework CoreFoundation -framework CoreMIDI -framework AudioUnit -framework AudioToolbox -framework ApplicationServices -framework AppKit -framework IOKit "
        dnl FEATURE: Whether to support direct serial port pass-through
        AC_DEFINE(C_DIRECTSERIAL, 1, [ Define to 1 if you want serial pass-through support (Win32, Posix and OS/2).])
        ;;

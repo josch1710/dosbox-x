@@ -1189,6 +1189,7 @@ for /d %%i in ("$(SolutionDir)\..\contrib\translations\*") do copy "%%i\*.lng" "
     <ClCompile Include="..\src\gui\zipcrc.c" />
     <ClCompile Include="..\src\gui\zipfile.cpp" />
     <ClCompile Include="..\src\hardware\8255.cpp" />
+    <ClCompile Include="..\src\hardware\cqm.c" />
     <ClCompile Include="..\src\hardware\imfc.cpp" />
     <ClCompile Include="..\src\hardware\imfc_rom.c" />
     <ClCompile Include="..\src\hardware\mame\fmopl.cpp" />
@@ -1820,6 +1821,7 @@ for /d %%i in ("$(SolutionDir)\..\contrib\translations\*") do copy "%%i\*.lng" "
     <ClInclude Include="..\src\gui\render_templates_hq3x.h" />
     <ClInclude Include="..\src\gui\render_templates_sai.h" />
     <ClInclude Include="..\src\hardware\adlib.h" />
+    <ClInclude Include="..\src\hardware\cqm.h" />
     <ClInclude Include="..\src\hardware\dbopl.h" />
     <ClInclude Include="..\src\hardware\esfmu\esfm.h" />
     <ClInclude Include="..\src\hardware\hardopl.h" />
@@ -1833,6 +1835,7 @@ for /d %%i in ("$(SolutionDir)\..\contrib\translations\*") do copy "%%i\*.lng" "
     <ClInclude Include="..\src\hardware\opl2board\opl2board.h" />
     <ClInclude Include="..\src\hardware\opl3duoboard\opl3duoboard.h" />
     <ClInclude Include="..\src\hardware\nukedopl.h" />
+    <ClInclude Include="..\src\hardware\nukedopl_wf_rom.h" />
     <ClInclude Include="..\src\hardware\opl.h" />
     <ClInclude Include="..\src\hardware\parport\directlpt.h" />
     <ClInclude Include="..\src\hardware\parport\filelpt.h" />

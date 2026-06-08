@@ -37,6 +37,11 @@
 #include <output/output_ttf.h>
 #include <output/output_direct3d11.h>
 
+#if C_METAL
+void OUTPUT_Metal_Select();
+void metal_init();
+#endif
+
 #if C_DIRECT3D
 void d3d_init(void);
 #if defined(C_SDL2)
@@ -50,6 +55,10 @@ void resetFontSize();
 
 void res_init(void), RENDER_Reset(void), UpdateOverscanMenu(void), GFX_SetTitle(int32_t cycles, int frameskip, Bits timing, bool paused);
 void OutputSettingMenuUpdate(void);
+
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+void OUTPUT_Metal_Shutdown();
+#endif
 
 extern int initgl, posx, posy;
 extern bool rtl, gbk, chinasea, window_was_maximized, dpi_aware_enable, isVirtualBox;
@@ -179,6 +188,13 @@ void change_output(int output) {
         LOG_MSG("change_output: DIRECT3D11");
         OUTPUT_DIRECT3D11_Select();
         d3d11_init();
+        break;
+#endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+    case 14: /* Metal */
+        LOG_MSG("change_output: Metal");
+        OUTPUT_Metal_Select();
+        metal_init();
         break;
 #endif
     default:
@@ -312,6 +328,9 @@ void OutputSettingMenuUpdate(void) {
 #endif
 #if C_GAMELINK
     mainMenu.get_item("output_gamelink").check(sdl.desktop.want_type == SCREEN_GAMELINK).refresh_item(mainMenu);
+#endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+    mainMenu.get_item("output_metal").check(sdl.desktop.want_type == SCREEN_METAL).refresh_item(mainMenu);
 #endif
 }
 
@@ -451,6 +470,29 @@ bool toOutput(const char *what) {
         }
         else {
             change_output(13);
+        }
+    }
+#endif
+#if MACOSX && defined(C_SDL2) && C_METAL
+    else if(!strcmp(what, "metal")) {
+        if(sdl.desktop.type == SCREEN_METAL)
+            return false;
+        OUTPUT_Metal_Shutdown();
+#if defined(C_OPENGL)
+        change_output(3);
+#endif
+        if(window_was_maximized && !GFX_IsFullscreen()) {
+            change_output(14);
+#if defined(WIN32)
+            ShowWindow(GetHWND(), SW_MAXIMIZE);
+#endif
+        }
+        else {
+            OUTPUT_Metal_Shutdown();
+#if defined(C_OPENGL)
+            change_output(3);
+#endif
+            change_output(14);
         }
     }
 #endif

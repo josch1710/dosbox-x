@@ -122,7 +122,9 @@ static const char *def_menu__toplevel[] =
     "VideoMenu",
     "SoundMenu",
     "DOSMenu",
+#if !defined(OSFREE)
     "DriveMenu",
+#endif
 #if !defined(C_EMSCRIPTEN)
     "CaptureMenu",
 #endif
@@ -140,7 +142,9 @@ static const char *def_menu_main[] =
     "mapper_mapper",
 #if !defined(HX_DOS)
     "--",
+# if !defined(OSFREE)
     "mapper_quickrun",
+# endif
     "loadlang",
     "mapper_loadmap",
 #endif
@@ -181,6 +185,7 @@ static const char *def_menu_main_sendkey[] =
     "sendkey_winlogo",
     "sendkey_winmenu",
     "sendkey_alttab",
+    "sendkey_altsysrq",
     "sendkey_ctrlesc",
     "sendkey_ctrlbreak",
     "sendkey_cad",
@@ -401,6 +406,9 @@ static const char *def_menu_video_output[] =
 #if C_GAMELINK
     "output_gamelink",
 #endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+    "output_metal",
+#endif    
     "--",
     "doublescan",
 #if !defined(C_SDL2)
@@ -582,20 +590,26 @@ static const char *def_menu_video[] =
 /* DOS menu ("DOSMenu") */
 static const char *def_menu_dos[] =
 {
+#if !defined(OSFREE)
     "DOSVerMenu",
     "DOSLFNMenu",
-#if defined(WIN32) && !defined(HX_DOS) || defined(LINUX) || defined(MACOSX)
+# if defined(WIN32) && !defined(HX_DOS) || defined(LINUX) || defined(MACOSX)
     "DOSWinMenu",
-#endif
+# endif
     "--",
+#endif
     "DOSMouseMenu",
+#if !defined(OSFREE)
     "DOSEMSMenu",
+#endif
     "DOSDiskRateMenu",
     "--",
     "enable_a20gate",
     "quick_reboot",
     "sync_host_datetime",
+#if !defined(OSFREE)
     "shell_config_commands",
+#endif
     "--",
     "mapper_swapimg",
     "mapper_swapcd",
@@ -832,7 +846,9 @@ static const char* def_menu_debug[] =
     "--",
     "debug_blankrefreshtest",
     "debug_generatenmi",
+#if !defined(OSFREE)
     "debug_int2fhook",
+#endif
     "debug_pageflip",
     "debug_retracepoll",
     "--",
@@ -846,9 +862,11 @@ static const char* def_menu_debug[] =
     "wait_on_error",
     "--",
     "video_debug_overlay",
+#if !defined(OSFREE)
     "--",
     "debug_logint21",
     "debug_logfileio",
+#endif
     NULL
 };
 #elif !defined(MACOSX) && !defined(LINUX) && !defined(HX_DOS) && !defined(C_EMSCRIPTEN)
@@ -873,7 +891,9 @@ static const char *def_menu_help[] =
     "help_wiki",
     "help_issue",
 #endif
+#if !defined(OSFREE)
     "--",
+#endif
 #if C_PCAP
     "help_nic",
 #endif
@@ -883,10 +903,12 @@ static const char *def_menu_help[] =
 #if !C_DEBUG && !defined(MACOSX) && !defined(LINUX) && !defined(HX_DOS) && !defined(C_EMSCRIPTEN)
     "HelpDebugMenu",
 #endif
-#if C_PCAP || C_PRINTER && defined(WIN32) || !C_DEBUG && !defined(MACOSX) && !defined(LINUX) && !defined(HX_DOS) && !defined(C_EMSCRIPTEN)
+#if !defined(OSFREE)
+# if C_PCAP || C_PRINTER && defined(WIN32) || !C_DEBUG && !defined(MACOSX) && !defined(LINUX) && !defined(HX_DOS) && !defined(C_EMSCRIPTEN)
     "--",
-#endif
+# endif
     "HelpCommandMenu",
+#endif
     NULL
 };
 
@@ -2407,7 +2429,9 @@ void MENU_Check_Drive(HMENU handle, int cdrom, int floppy, int local, int image,
     EnableMenuItem(handle, floppy, (Drives[drive - 'A'] || menu.boot) ? MF_GRAYED : MF_ENABLED);
     EnableMenuItem(handle, local, (Drives[drive - 'A'] || menu.boot) ? MF_GRAYED : MF_ENABLED);
     EnableMenuItem(handle, image, (Drives[drive - 'A'] || menu.boot) ? MF_GRAYED : MF_ENABLED);
+ #if !defined(OSFREE)
     if(sec) EnableMenuItem(handle, automount, AUTOMOUNT(full_drive.c_str(), drive) && !menu.boot && sec->Get_bool("automount") ? MF_ENABLED : MF_GRAYED);
+ #endif
     EnableMenuItem(handle, umount, (!Drives[drive - 'A']) || menu.boot ? MF_GRAYED : MF_ENABLED);
 #endif
 }

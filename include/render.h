@@ -34,7 +34,7 @@
 enum ASPECT_MODES {
     ASPECT_FALSE = 0
     ,ASPECT_TRUE
-#if C_SURFACE_POSTRENDER_ASPECT || (defined(WIN32) && defined(C_SDL2))
+#if C_SURFACE_POSTRENDER_ASPECT || ((defined(WIN32) || defined(MACOSX)) && defined(C_SDL2))
     ,ASPECT_NEAREST
     ,ASPECT_BILINEAR
 #endif
@@ -94,6 +94,7 @@ typedef struct Render_t {
 		uint8_t *outWrite;
 		Bitu cachePitch;
 		uint8_t *cacheRead;
+		Bitu frameCachePitch;
 		Bitu inHeight, inLine, outLine;
 	} scale;
 	struct {

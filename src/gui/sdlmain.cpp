@@ -191,6 +191,19 @@ char* revert_escape_newlines(const char* aMessage);
 #include <output/output_tools_xbrz.h>
 static bool init_output = false;
 bool switch_to_d3d11_on_startup = false;
+bool switch_to_metal_on_startup = false;
+
+/* #include <output/output_metal.h> */ // includes Objective-C code
+#if C_METAL
+void metal_init();
+void OUTPUT_Metal_Select();
+Bitu OUTPUT_Metal_GetBestMode(Bitu flags);
+bool OUTPUT_Metal_StartUpdate(uint8_t*& pixels, Bitu& pitch);
+void OUTPUT_Metal_EndUpdate(const uint16_t* changedLines);
+Bitu OUTPUT_Metal_SetSize(void);
+void OUTPUT_Metal_Shutdown();
+void OUTPUT_Metal_CheckSourceResolution();
+#endif
 
 #if defined(WIN32)
 #include "resource.h"
@@ -721,7 +734,9 @@ bool setSizeButNotResize() {
 
 Bitu time_limit_ms = 0;
 
+#if !defined(OSFREE)
 extern bool keep_umb_on_boot;
+#endif
 extern bool keep_private_area_on_boot;
 bool guest_machine_power_on = false;
 
@@ -729,14 +744,18 @@ std::string custom_savedir;
 
 void SHELL_Run();
 void DisableINT33();
+#if !defined(OSFREE)
 void EMS_DoShutDown();
+#endif
 void XMS_DoShutDown();
 void DOS_DoShutDown();
 void GUS_DOS_Shutdown();
 void SBLASTER_DOS_Shutdown();
 void DOS_ShutdownDevices(void);
+#if !defined(OSFREE)
 void RemoveEMSPageFrame(void);
 void RemoveUMBBlock();
+#endif
 void DOS_GetMemory_unmap();
 void VFILE_Shutdown(void);
 void PROGRAMS_Shutdown(void);
@@ -749,6 +768,7 @@ void FreeBIOSDiskList();
 void GFX_ShutDown(void);
 void MAPPER_Shutdown();
 void SHELL_Init(void);
+void SHELL_MessagesInit(void);
 void CopyClipboard(int all);
 void CopyAllClipboard(bool bPressed);
 void PasteClipboard(bool bPressed);
@@ -757,6 +777,8 @@ void QuickEdit(bool bPressed);
 void ClipKeySelect(int sym);
 bool isModifierApplied(void);
 bool PasteClipboardNext(void);
+void CONFIGSHELL_Init(void);
+void CONFIGSHELL_Run(void);
 
 #if C_DYNAMIC_X86
 void CPU_Core_Dyn_X86_Shutdown(void);
@@ -772,7 +794,7 @@ void UpdateWindowDimensions(Bitu width, Bitu height)
     currentWindowHeight = height;
 }
 
-static Bitu dim_width=0, dim_height=0, dpi_width=0, dpi_height=0;
+static double dim_width=0, dim_height=0, dpi_width=0, dpi_height=0;
 
 void PrintScreenSizeInfo(void) {
 #if 1
@@ -978,11 +1000,11 @@ bool                        startup_state_capslock = false; // Global for keyboa
 bool                        startup_state_scrlock = false; // Global for keyboard initialisation
 int mouse_start_x=-1, mouse_start_y=-1, mouse_end_x=-1, mouse_end_y=-1, fx=-1, fy=-1, paste_speed=20, wheel_key=0, mbutton=3;
 bool wheel_guest = false, clipboard_dosapi = true, clipboard_biospaste =
-#if defined (WIN32) && (!defined(__MINGW32__) || defined(__MINGW64_VERSION_MAJOR))
-false;
-#else
+//#if defined (WIN32) && (!defined(__MINGW32__) || defined(__MINGW64_VERSION_MAJOR))
+//false;
+//#else
 true;
-#endif
+//#endif
 const char *modifier;
 
 #ifdef WIN32
@@ -1859,6 +1881,8 @@ SDL_Window* GFX_SetSDLWindowMode(uint16_t width, uint16_t height, SCREEN_TYPES s
             if(saved_flags & SDL_WINDOW_MAXIMIZED) {
                 SDL_MaximizeWindow(sdl.window);
             }
+            else if(posx < 0 || posy < 0)
+                SDL_SetWindowPosition(sdl.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
             else if(saved_x != SDL_WINDOWPOS_UNDEFINED && saved_y != SDL_WINDOWPOS_UNDEFINED &&
                 !(saved_flags & SDL_WINDOW_MAXIMIZED)) {
                 SDL_SetWindowPosition(sdl.window, saved_x, saved_y); // restore position.
@@ -2272,6 +2296,11 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
             retFlags = OUTPUT_DIRECT3D11_SetSize();
             break;
 #endif
+#endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+        case SCREEN_METAL:
+            retFlags = OUTPUT_Metal_SetSize();
+            break;
 #endif
 #if defined(USE_TTF)
         case SCREEN_TTF:
@@ -3249,6 +3278,11 @@ bool GFX_StartUpdate(uint8_t* &pixels,Bitu &pitch)
             break;
 #endif
 #endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+        case SCREEN_METAL:
+            return OUTPUT_Metal_StartUpdate(pixels, pitch);
+            break;
+#endif
         default:
             break;
     }
@@ -3289,6 +3323,13 @@ void GFX_EndUpdate(const uint16_t *changedLines) {
     if (sdl.desktop.prevent_fullscreen)
         return;
 
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+    if(sdl.desktop.type == SCREEN_METAL) {
+        sdl.updating = false;
+        goto switch_type;
+    }
+    else
+#endif
 #if C_DIRECT3D
 #if defined(C_SDL2)
     if(sdl.desktop.type == SCREEN_DIRECT3D11) {
@@ -3352,6 +3393,11 @@ switch_type:
             OUTPUT_DIRECT3D11_EndUpdate(changedLines);
             break;
 #endif
+#endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+        case SCREEN_METAL:
+            OUTPUT_Metal_EndUpdate(changedLines);
+            break;
 #endif
         default:
             break;
@@ -3430,9 +3476,11 @@ Bitu GFX_GetRGB(uint8_t red, uint8_t green, uint8_t blue) {
 #if defined(C_SDL2)
         case SCREEN_DIRECT3D11:
 #endif
-            return SDL_MapRGB(sdl.surface->format, red, green, blue);
 #endif
-
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+        case SCREEN_METAL: // pixelFormat = MTLPixelFormatBGRA8Unorm
+#endif
+            return SDL_MapRGB(sdl.surface->format, red, green, blue);
         default:
             break;
     }
@@ -3486,7 +3534,11 @@ static void GUI_ShutDown(Section * /*sec*/) {
             break;
 #endif
 #endif
-
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+        case SCREEN_METAL:
+            OUTPUT_Metal_Shutdown();
+            break;
+#endif
         default:
                 break;
     }
@@ -3632,6 +3684,11 @@ void SendKey(std::string key) {
         KEYBOARD_AddKey(KBD_tab, true);
         KEYBOARD_AddKey(KBD_leftalt, false);
         KEYBOARD_AddKey(KBD_tab, false);
+    } else if (key == "sendkey_altsysrq") {
+        KEYBOARD_AddKey(KBD_leftalt, true);
+        KEYBOARD_AddKey(KBD_printscreen, true);
+        KEYBOARD_AddKey(KBD_leftalt, false);
+        KEYBOARD_AddKey(KBD_printscreen, false);
     } else if (key == "sendkey_ctrlesc") {
         KEYBOARD_AddKey(KBD_leftctrl, true);
         KEYBOARD_AddKey(KBD_esc, true);
@@ -4150,6 +4207,26 @@ static void GUI_StartUp() {
             switch_to_d3d11_on_startup = false;
         }
 #endif
+#endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+    }
+    else if(output == "metal")
+    {
+        if(!init_output) {
+            switch_to_metal_on_startup = true;
+#if C_OPENGL
+            OUTPUT_OPENGL_Select(GLBilinear);
+#else
+            OUTPUT_SURFACE_Select();
+#endif
+            init_output = true;
+        }
+        else {
+            OUTPUT_Metal_Select();
+            metal_init();
+            sdl.desktop.want_type = SCREEN_METAL;
+            switch_to_metal_on_startup = false;
+        }
 #endif
     }
 #if defined(USE_TTF)
@@ -6780,6 +6857,9 @@ void SDL_SetupConfigSection() {
 #if C_DIRECT3D
         "direct3d", "direct3d11",
 #endif
+#if defined(MACOSX) && defined(C_SDL2) && C_METAL
+        "metal",
+#endif
         nullptr };
 
     Pint = sdl_sec->Add_int("display", Property::Changeable::Always, 0);
@@ -7751,9 +7831,13 @@ void PARALLEL_Init();
 void DONGLE_Init();
 void DOS_Init();
 void XMS_Init();
+#if !defined(OSFREE)
 void EMS_Init();
+#endif
 void MOUSE_Init();
+#if !defined(OSFREE)
 void DOS_KeyboardLayout_Init();
+#endif
 void CDROM_Image_Init();
 void MSCDEX_Init();
 void DRIVES_Init();
@@ -7805,8 +7889,10 @@ void Windows_DPI_Awareness_Init() {
 
 bool VM_Boot_DOSBox_Kernel() {
     if (!dos_kernel_disabled) {
+#if !defined(OSFREE)
         RemoveEMSPageFrame();
         RemoveUMBBlock();
+#endif
         DisableINT33();
         DOS_GetMemory_unmap();
         VFILE_Shutdown();
@@ -7814,7 +7900,9 @@ bool VM_Boot_DOSBox_Kernel() {
         DOS_UninstallMisc();
         SBLASTER_DOS_Shutdown();
         GUS_DOS_Shutdown();
+#if !defined(OSFREE)
         EMS_DoShutDown();
+#endif
         XMS_DoShutDown();
         DOS_DoShutDown();
 
@@ -7856,17 +7944,25 @@ bool VM_Boot_DOSBox_Kernel() {
         /* Date/time */
         DOS_InitClock();
 
+#if !defined(OSFREE)
         /* keyboard mapping, at this point in CONFIG.SYS parsing, right? */
         void DOS_KeyboardLayout_Startup(Section* sec);
         DOS_KeyboardLayout_Startup(NULL);
+#endif
 
         /* Most MS-DOS installations have a DEVICE=C:\HIMEM.SYS somewhere near the top of their CONFIG.SYS */
         void XMS_Startup(Section *sec);
         XMS_Startup(NULL);
 
+#if !defined(OSFREE)
         /* And then after that, usually a DEVICE=C:\EMM386.EXE just after HIMEM.SYS */
         void EMS_Startup(Section* sec);
         EMS_Startup(NULL);
+#endif
+
+        SHELL_MessagesInit();
+        CONFIGSHELL_Init();
+        CONFIGSHELL_Run();
 
         DispatchVMEvent(VM_EVENT_DOS_INIT_CONFIG_SYS_DONE); // <- we just finished executing CONFIG.SYS
         SHELL_Init(); // <- NTS: this will change CPU instruction pointer!
@@ -8010,6 +8106,13 @@ bool custom_bios = false;
 size_t custom_bios_image_size = 0;
 Bitu custom_bios_image_offset = 0;
 unsigned char *custom_bios_image = NULL;
+
+/* 2026/06/07: We now accept from BOOT a boot sector to load into memory
+ *             after DOS kernel shutdown, so that the process shutdown
+ *             is cleaner and the "don't check MCB corruption" flag is
+ *             no longer necessary. */
+std::vector<uint8_t> boot_code_image;
+PhysPt boot_code_image_load_to = 0;
 
 // OK why isn't this being set for Linux??
 #ifndef SDL_MAIN_NOEXCEPT
@@ -9205,6 +9308,10 @@ int main(int argc, char* argv[]) SDL_MAIN_NOEXCEPT {
         LOG_MSG("macOS Resource path: %s",MacOSXResPath.c_str());
 #endif
 
+#if defined(OSFREE)
+	LOG_MSG("DOSBox-X OS-Free build -- Built-in MS-DOS emulation is not available");
+#endif
+
         /* -- [debug] setup console */
 #if C_DEBUG
 # if defined(WIN32) && !defined(HX_DOS) && !defined(_WIN32_WINDOWS)
@@ -9647,10 +9754,14 @@ int main(int argc, char* argv[]) SDL_MAIN_NOEXCEPT {
         /* OS init now */
         DOS_Init();
         DRIVES_Init();
+#if !defined(OSFREE)
         DOS_KeyboardLayout_Init();
+#endif
         MOUSE_Init(); // FIXME: inits INT 15h and INT 33h at the same time. Also uses DOS_GetMemory() which is why DOS_Init must come first
         XMS_Init();
+#if !defined(OSFREE)
         EMS_Init();
+#endif
         AUTOEXEC_Init();
 #if C_IPX
         IPX_Init();
@@ -9969,7 +10080,8 @@ fresh_boot:
         wait_debugger = false;
         reboot_machine = false;
         dos_kernel_shutdown = false;
-        guest_msdos_mcb_chain = (uint16_t)(~0u);
+	guest_msdos_mcb_chain = (uint16_t)(~0u);
+	guest_msdos_dev_chain = (uint16_t)(~0u);
 
 #if C_DEBUG
         if (control->opt_test) ::testing::InitGoogleTest(&argc, argv);
@@ -10120,11 +10232,13 @@ fresh_boot:
             else
                 DispatchVMEvent(VM_EVENT_DOS_EXIT_BEGIN);
 
+#if !defined(OSFREE)
             /* older shutdown code */
             RemoveEMSPageFrame();
 
             /* remove UMB block */
             if (!keep_umb_on_boot) RemoveUMBBlock();
+#endif
 
             /* disable INT 33h mouse services. it can interfere with guest OS paging and control of the mouse */
             DisableINT33();
@@ -10162,8 +10276,10 @@ fresh_boot:
             DOS_UninstallMisc();
             SBLASTER_DOS_Shutdown();
             GUS_DOS_Shutdown();
+#if !defined(OSFREE)
             /* disable Expanded Memory. EMM is a DOS API, not a BIOS API */
             EMS_DoShutDown();
+#endif
             /* and XMS, also a DOS API */
             XMS_DoShutDown();
             /* and the DOS API in general */
@@ -10195,6 +10311,11 @@ fresh_boot:
 #if DOSBOXMENU_TYPE == DOSBOXMENU_HMENU
             Reflect_Menu();
 #endif
+
+            /* proceed to real mode */
+            void CPU_Snap_Back_Forget();
+            CPU_Snap_Back_To_Real_Mode();
+            CPU_Snap_Back_Forget();
         }
 
 #if DOSBOXMENU_TYPE == DOSBOXMENU_HMENU
@@ -10220,6 +10341,14 @@ fresh_boot:
             if (IS_PC98_ARCH) {
                 void PC98_show_cursor(bool show);
                 PC98_show_cursor(false);
+            }
+
+            /* if BOOT gave us code to load, do it -- I hope you set boot_code_image_load_to to a nonzero value! */
+            if (!boot_code_image.empty()) {
+                LOG_MSG("Loading %u bytes of boot code to %x",(unsigned int)boot_code_image.size(),(unsigned int)boot_code_image_load_to);
+                MEM_BlockWrite(boot_code_image_load_to,boot_code_image.data(),boot_code_image.size());
+                boot_code_image_load_to = 0;
+                boot_code_image.clear();
             }
 
             /* new code: fire event */
@@ -10254,6 +10383,7 @@ fresh_boot:
             boothax = BOOTHAX_NONE;
             guest_msdos_LoL = 0;
             guest_msdos_mcb_chain = 0;
+            guest_msdos_dev_chain = 0;
 
             void CPU_Snap_Back_Forget();
             /* Shutdown everything. For shutdown to work properly we must force CPU to real mode */
@@ -10299,8 +10429,9 @@ fresh_boot:
             boothax = BOOTHAX_NONE;
             guest_msdos_LoL = 0;
             guest_msdos_mcb_chain = 0;
+            guest_msdos_dev_chain = 0;
 
-            void CPU_Snap_Back_Forget();
+	    void CPU_Snap_Back_Forget();
             /* Shutdown everything. For shutdown to work properly we must force CPU to real mode */
             CPU_Snap_Back_To_Real_Mode();
             CPU_Snap_Back_Forget();

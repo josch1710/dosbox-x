@@ -96,6 +96,7 @@ public:
 	char* name = NULL;
 	uint8_t drive = 0;
 	uint32_t flags = 0;
+	bool neverclose = false; /* set for CON/AUX/PRN so MS-DOS always has a console even if all JFT's closed the handles */
 	bool open = false;
 
 	uint16_t attr = 0;
@@ -168,7 +169,7 @@ public:
     bool	WriteToControlChannel(PhysPt bufptr, uint16_t size, uint16_t* retcode) override;
     uint8_t	GetStatus(bool input_flag) override;
     bool CheckSameDevice(uint16_t seg, uint16_t s_off, uint16_t i_off);
-    uint16_t CallDeviceFunction(uint8_t command, uint8_t length, uint16_t seg, uint16_t offset, uint16_t size);
+    uint16_t CallRWIODeviceFunction(uint8_t command, uint8_t length, uint16_t seg, uint16_t offset, uint16_t size);
 private:
     struct ExtDeviceData ext;
 

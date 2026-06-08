@@ -385,13 +385,13 @@ bool CDirect3D11::CreateSamplers(void) {
 }
 
 void CDirect3D11::SetSamplerMode() {
-    static int last_mode = -1;
-    if(last_mode == current_render_mode) return;
+    //static int last_mode = -1;
+    //if(last_mode == current_render_mode) return;
     ID3D11SamplerState* s = samplerLinear;
     if (current_render_mode == ASPECT_NEAREST) s = samplerNearest;
 
     context->PSSetSamplers(0, 1, &s);
-    last_mode = current_render_mode;
+    //last_mode = current_render_mode;
 }
 
 void CDirect3D11::GetRenderMode() {
@@ -579,6 +579,7 @@ bool CDirect3D11::Resize(
     uint32_t tex_w,    // texture width
     uint32_t tex_h)    // texture height
 {
+    static bool was_fullscreen = 0;  // Fix me: Hack for window size reset when exiting fullscreen mode
     const bool reset_window_size =
         (((userResizeWindowWidth == 0) && (userResizeWindowHeight == 0)) ||
         (tex_w != last_tex_w || tex_h != last_tex_h))
@@ -601,12 +602,12 @@ bool CDirect3D11::Resize(
             render.scale.hardware = true;
             hardware_scaler_selected = false;
         }
-        if(reset_window_size || render.scale.size != last_scalesize){
+        if(reset_window_size || render.scale.size != last_scalesize) {
             if(tex_h >= CurMode->sheight * 2) { // doublescan mode
                 uint32_t width = tex_w;
                 uint32_t height = tex_h;
                 if(render.aspect) {
-                    width = (uint32_t)((double)height * CurMode->swidth / CurMode->sheight +0.5); // First adjust width to match the original aspect ratio.
+                    width = (uint32_t)((double)height * CurMode->swidth / CurMode->sheight + 0.5); // First adjust width to match the original aspect ratio.
                     height = (uint32_t)((double)width / target_ratio + 0.5); // Then adjust height to match the target aspect ratio. This ensures the final window size maintains the target aspect ratio, even in doublescan mode.
                 }
                 window_w = (uint32_t)(height * target_ratio * (render.scale.hardware ? (double)render.scale.size / 2.0 : 1u) + 0.5);
@@ -632,6 +633,11 @@ bool CDirect3D11::Resize(
             //LOG_MSG("window_w=%d, window_h=%d, sdl.draw.width=%d, real_w=%d, real_h=%d, w/h=%lf, target=%lf", window_w, window_h, sdl.draw.width, real_w, real_h, (double)real_w/real_h, target_ratio);
         }
     }
+    else {
+        userResizeWindowWidth = 0;
+        userResizeWindowHeight = 0;
+        was_fullscreen = true;
+    }
 
     if(window_w == last_window_w &&
         window_h == last_window_h &&
@@ -645,7 +651,30 @@ bool CDirect3D11::Resize(
     frame_height = tex_h;
 
     if(sdl.window && !sdl.desktop.fullscreen) {
-        SDL_SetWindowSize(sdl.window, window_w, window_h);
+        int real_tex_w = tex_w; int real_tex_h = tex_h;
+        if(render.scale.hardware && (reset_window_size || was_fullscreen > 0)) {
+            real_tex_w = tex_w * render.scale.size;
+            real_tex_h = tex_h * render.scale.size;
+            if(CurMode->type == M_TEXT && vga.mode != M_HERC_GFX) {
+                real_tex_w = (uint32_t)((double)real_tex_w / 2.0 + 0.5); // Suppress window size in text mode
+                real_tex_h = (uint32_t)((double)real_tex_h / 2.0 + 0.5);
+                if(real_tex_w < tex_w || real_tex_h < tex_h) {
+                    real_tex_w = tex_w; // Keep at least original size
+                    real_tex_h = tex_h;
+                }
+            }
+        }
+        else {
+            real_tex_w = tex_w;
+            real_tex_h = tex_h;
+        }
+        if(render.aspect) {
+            real_tex_h = (uint32_t)((double)real_tex_w / target_ratio + 0.5);
+            //LOG_MSG("window_w=%d, window_h=%d, real_w=%d, real_h=%d, w/h=%lf, target=%lf", window_w, window_h, real_tex_w, real_tex_h, (double)real_tex_w/real_tex_h, target_ratio);
+
+        }
+        SDL_SetWindowSize(sdl.window, real_tex_w, real_tex_h);
+        if(!reset_window_size) was_fullscreen = false; // Fix me: This flag is set to recover unintended size changes when returning from fullscreen mode.
     }
 
     int real_w = 0, real_h = 0;

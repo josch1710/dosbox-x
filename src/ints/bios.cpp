@@ -8555,7 +8555,9 @@ extern uint32_t tandy_128kbase;
 static int bios_post_counter = 0;
 
 extern void BIOSKEY_PC98_Write_Tables(void);
+#if !defined(OSFREE)
 extern Bitu PC98_AVSDRV_PCM_Handler(void);
+#endif
 
 static unsigned int acpiptr2ofs(unsigned char *w) {
 	return w - ACPI_buffer;
@@ -9714,7 +9716,9 @@ static void BIOSLOGO_PNG_READ(png_structp context,png_bytep buf,size_t count) {
 
 #endif
 
+#if !defined(OSFREE)
 extern unsigned int INT13Xfer;
+#endif
 
 class BIOS:public Module_base{
 private:
@@ -9734,7 +9738,9 @@ private:
 	INT13_ElTorito_NoEmuDriveNumber = 0;
 	INT13_ElTorito_NoEmuCDROMDrive = 0;
 	INT13_ElTorito_IDEInterface = -1;
+#if !defined(OSFREE)
 	INT13Xfer = 0;
+#endif
 
 	ACPI_mem_enable(false);
 	ACPI_REGION_SIZE = 0;
@@ -10435,8 +10441,10 @@ private:
                 }
             }
 
+#if !defined(OSFREE)
             callback_pc98_avspcm.Install(&PC98_AVSDRV_PCM_Handler,CB_IRET,"AVSDRV.SYS PCM driver");
             callback_pc98_avspcm.Set_RealVec(0xd9, true);
+#endif
         }
 
         if (IS_PC98_ARCH) {
@@ -11257,6 +11265,7 @@ startfunction:
              * indicated in the filename. There are multiple versions, one for each vertical resolution of common
              * CGA/EGA/VGA/etc. modes: 480-line, 400-line, 350-line, and 200-line. All images other than the 480-line
              * one have a non-square pixel aspect ratio. Please take that into consideration. */
+            /* 2026/03/29: You can now put it in the DOSBox config directory in your home directory as well. */
             if (IS_VGA_ARCH) {
                 if (logo) user_filename = std::string(logo) + "224x224.png";
                 filename = "dosbox224x224.png";
@@ -11300,6 +11309,12 @@ startfunction:
                 inpng = dosbox224x93_png;
             }
 
+            const std::string configdir = Cross::GetPlatformConfigDir();
+
+            if (png_fp == NULL && !configdir.empty() && !user_filename.empty())
+                png_fp = fopen((configdir + user_filename).c_str(),"rb");
+            if (png_fp == NULL && !configdir.empty() && filename != NULL)
+                png_fp = fopen((configdir + filename).c_str(),"rb");
             if (png_fp == NULL && !user_filename.empty())
                 png_fp = fopen(user_filename.c_str(),"rb");
             if (png_fp == NULL && filename != NULL)
@@ -11582,6 +11597,10 @@ startfunction:
         if (ISAPNPBIOS) {
             BIOS_Int10RightJustifiedPrint(x,y,"ISA Plug & Play BIOS active\n");
         }
+
+#if defined(OSFREE)
+        BIOS_Int10RightJustifiedPrint(x,y,"OS-FREE BUILD\n");
+#endif
 
         if (*logo_text) {
             const size_t max_w = 76;
@@ -12740,6 +12759,11 @@ void BIOS_Destroy(Section* /*sec*/){
         delete test;
         test = NULL;
     }
+
+    if (INT13_ElTorito_cdrom) {
+        INT13_ElTorito_cdrom->Release();
+        INT13_ElTorito_cdrom = NULL;
+    }
 }
 
 void BIOS_OnPowerOn(Section* sec) {
@@ -12769,6 +12793,11 @@ void BIOS_OnResetComplete(Section *x) {
     if (biosConfigSeg != 0u) {
         ROMBIOS_FreeMemory((Bitu)(biosConfigSeg << 4u)); /* remember it was alloc'd paragraph aligned, then saved >> 4 */
         biosConfigSeg = 0u;
+    }
+
+    if (INT13_ElTorito_cdrom) {
+        INT13_ElTorito_cdrom->Release();
+        INT13_ElTorito_cdrom = NULL;
     }
 
     call_pnp_rp = 0;
